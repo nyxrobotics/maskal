@@ -1102,14 +1102,15 @@ def write_labelme_annotations(write_dir, basename, class_names, masks, height, w
             contours_unfiltered, hierarchy = cv2.findContours((masksel*255).astype(np.uint8),cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
             contours = []
             for cnts in range(len(contours_unfiltered)):
-                area = cv2.contourArea(contours_unfiltered[cnts])
+                area = cv2.contourArea(contours_unfiltered[cnts]) 
                 if area > 50:
-                    contours.append(contours_unfiltered[cnts])
+                    contours_lowpoly = cv2.approxPolyDP(contours_unfiltered[cnts], 0.01*cv2.arcLength(contours_unfiltered[cnts], True), True)
+                    contours.append(contours_lowpoly)
 
-            try:
-                contours = smooth_contours(contours)
-            except:
-                pass
+            # try:
+            #     contours = smooth_contours(contours)
+            # except:
+            #     pass
                
             if len(contours) > 0:
                 useful_masks = True
