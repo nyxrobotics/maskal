@@ -80,7 +80,7 @@ def check_config_file(config, config_filename, input_yaml):
         with open(input_yaml, 'rb') as file:
             desired_inputs = yaml.load(file, Loader=yaml.FullLoader)
     except FileNotFoundError:
-        logger.error(f"Could not find inputs.yaml file")
+        logger.error(f"Could not find {input_yaml} file")
         sys.exit("Closing application")
 
     def check_network_config(field, value, error):
@@ -607,7 +607,7 @@ if __name__ == "__main__":
     for key, value in config.items():
         print(key, ':', value)
 
-    config_ok = check_config_file(config, args.config, 'types.yaml')
+    config_ok = check_config_file(config, args.config, os.path.dirname(__file__) + '/types.yaml')
     if not config_ok: 
         sys.exit("Closing application")
 
