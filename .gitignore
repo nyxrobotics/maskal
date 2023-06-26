@@ -1,0 +1,8 @@
+
+build/
+
+detectron2.egg-info/
+
+detectron2/_C.cpython-38-x86_64-linux-gnu.so
+
+detectron2/model_zoo/configs

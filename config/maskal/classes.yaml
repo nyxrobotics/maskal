@@ -1,0 +1,4 @@
+# training-parameters
+classes: ['person', 'roboone']
+# train-sampler
+minority_classes: ['person', 'roboone']

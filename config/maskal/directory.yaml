@@ -1,0 +1,13 @@
+# folders
+weightsroot: "./weights"
+resultsroot: "./results"
+dataroot: "./datasets"
+initial_train_dir: "./datasets/initial_train"
+traindir: "./datasets/train"
+valdir: "./datasets/val"
+testdir: "./datasets/test"
+
+# data options
+use_initial_train_dir: False
+duplicate_initial_model_and_data: False
+initial_train_file: ""
