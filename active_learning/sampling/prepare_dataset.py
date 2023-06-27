@@ -1112,7 +1112,7 @@ def write_labelme_annotations(write_dir, basename, class_names, masks, height, w
             for cnts in range(len(contours_unfiltered)):
                 area = cv2.contourArea(contours_unfiltered[cnts]) 
                 if area > 50:
-                    contours_lowpoly = cv2.approxPolyDP(contours_unfiltered[cnts], 0.01*cv2.arcLength(contours_unfiltered[cnts], True), True)
+                    contours_lowpoly = cv2.approxPolyDP(contours_unfiltered[cnts], 0.004*cv2.arcLength(contours_unfiltered[cnts], True), True)
                     contours.append(contours_lowpoly)
 
             # try:
