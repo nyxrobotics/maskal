@@ -185,7 +185,7 @@ def rename_xml_files(annotdir):
 
                         os.rename(os.path.join(annotdir, annotation), os.path.join(annotdir, xml_name))
 
-def process_labelme_json(jsonfile, classnames):
+def process_labelme_json(jsonfile, classnames, width, height):
     group_ids = []
 
     with open(jsonfile, 'r') as json_file:
@@ -198,7 +198,7 @@ def process_labelme_json(jsonfile, classnames):
     no_group_ids = sum(x is None for x in group_ids)
     total_masks = len(unique_group_ids) + no_group_ids
 
-    all_unique_masks = np.zeros(total_masks, dtype = object)
+    all_unique_masks = np.zeros(total_masks, dtype=object)
 
     if len(unique_group_ids) > 0:
         unique_group_ids.sort()
@@ -211,7 +211,7 @@ def process_labelme_json(jsonfile, classnames):
             all_unique_masks[len(unique_group_ids) + h] = "None" + str(h+1)
     else:
         for h in range(no_group_ids):
-            all_unique_masks[h] = "None" + str(h+1)    
+            all_unique_masks[h] = "None" + str(h+1)
 
     category_ids = []
     masks = []
@@ -222,7 +222,7 @@ def process_labelme_json(jsonfile, classnames):
         masks.append([])
         crowd_ids.append([])
 
-    none_counter = 0 
+    none_counter = 0
 
     for p in data['shapes']:
         group_id = p['group_id']
@@ -245,7 +245,6 @@ def process_labelme_json(jsonfile, classnames):
 
         if run_further:
             if p['shape_type'] == "circle":
-                # https://github.com/wkentaro/labelme/issues/537
                 bearing_angles = [0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 
                 180, 195, 210, 225, 240, 255, 270, 285, 300, 315, 330, 345, 360]
                             
@@ -284,7 +283,7 @@ def process_labelme_json(jsonfile, classnames):
 
             if p['shape_type'] == "polygon":
                 points = p['points']
-                pts = np.asarray(points).astype(np.float32).reshape(-1,1,2)   
+                pts = np.asarray(points).astype(np.float32).reshape(-1,1,2)
                 points = np.asarray(pts).flatten().tolist()
 
                 # Ensure polygon points are within image boundaries
@@ -306,8 +305,7 @@ def process_labelme_json(jsonfile, classnames):
 
     return category_ids, masks, crowd_ids, status
 
-def process_darwin_json(jsonfile, classnames):
-    
+def process_darwin_json(jsonfile, classnames, width, height):
     with open(jsonfile, 'r') as json_file:
         data = json.load(json_file)
 
@@ -321,7 +319,7 @@ def process_darwin_json(jsonfile, classnames):
         masks.append([])
         crowd_ids.append([])
 
-    fill_id = 0 
+    fill_id = 0
 
     for p in data['annotations']:
         classname = p['name']
@@ -343,6 +341,15 @@ def process_darwin_json(jsonfile, classnames):
                         points.append(path_points[h]['x'])
                         points.append(path_points[h]['y'])
 
+                    # Ensure polygon points are within image boundaries
+                    for i in range(0, len(points), 2):
+                        if points[i] < 0 or points[i] >= width:
+                            logger.warning(f"X-coordinate {points[i]} is out of bounds. Clamping to image boundary.")
+                            points[i] = max(0, min(points[i], width - 1))
+                        if points[i+1] < 0 or points[i+1] >= height:
+                            logger.warning(f"Y-coordinate {points[i+1]} is out of bounds. Clamping to image boundary.")
+                            points[i+1] = max(0, min(points[i+1], height - 1))
+
                     masks[fill_id].append(points)
 
             if 'complex_polygon' in p:
@@ -354,8 +361,17 @@ def process_darwin_json(jsonfile, classnames):
                             points.append(path_points[h]['x'])
                             points.append(path_points[h]['y'])
 
+                        # Ensure polygon points are within image boundaries
+                        for i in range(0, len(points), 2):
+                            if points[i] < 0 or points[i] >= width:
+                                logger.warning(f"X-coordinate {points[i]} is out of bounds. Clamping to image boundary.")
+                                points[i] = max(0, min(points[i], width - 1))
+                            if points[i+1] < 0 or points[i+1] >= height:
+                                logger.warning(f"Y-coordinate {points[i+1]} is out of bounds. Clamping to image boundary.")
+                                points[i+1] = max(0, min(points[i+1], height - 1))
+
                         masks[fill_id].append(points)
-                    
+
             crowd_ids[fill_id] = 0
             status = "successful"
         else:
@@ -365,7 +381,7 @@ def process_darwin_json(jsonfile, classnames):
 
     return category_ids, masks, crowd_ids, status
 
-def process_cvat_xml(xmlfile, classnames):
+def process_cvat_xml(xmlfile, classnames, width, height):
     group_ids = []
 
     with open(xmlfile) as xml_file:
@@ -486,6 +502,8 @@ def process_cvat_xml(xmlfile, classnames):
 
     return category_ids, masks, crowd_ids, status
 
+
+
 def mkdir_supervisely(img_dir, write_dir, supervisely_meta_json):
     out_dir =  os.path.join(write_dir, "out_supervisely")
     if os.path.exists(out_dir):
@@ -514,7 +532,7 @@ def mkdir_supervisely(img_dir, write_dir, supervisely_meta_json):
     print("Output folder:", out_dir)
     return out_ann_dir  
 
-def process_supervisely_json(jsonfile, classnames):
+def process_supervisely_json(jsonfile, classnames, width, height):
     with open(jsonfile, 'r') as json_file:
         data = json.load(json_file)
 
@@ -602,6 +620,7 @@ def process_supervisely_json(jsonfile, classnames):
         fill_id += 1
 
     return category_ids, masks, crowd_ids, status
+
 
 def bounding_box(masks):
     areas = []
@@ -875,16 +894,16 @@ def create_json(rootdir, imgdir, images, classes, name):
 
             # Procedure to store the annotations in the final JSON file
             if annot_format == 'labelme':
-                category_ids, masks, crowd_ids, status = process_labelme_json(annot_filename, classes)
+                category_ids, masks, crowd_ids, status = process_labelme_json(annot_filename, classes, width, height)
             
             if annot_format == 'darwin':
-                category_ids, masks, crowd_ids, status = process_darwin_json(annot_filename, classes)
+                category_ids, masks, crowd_ids, status = process_darwin_json(annot_filename, classes, width, height)
 
             if annot_format == 'cvat':
-                category_ids, masks, crowd_ids, status = process_cvat_xml(annot_filename, classes)
+                category_ids, masks, crowd_ids, status = process_cvat_xml(annot_filename, classes, width, height)
 
             if annot_format == 'supervisely':
-                category_ids, masks, crowd_ids, status = process_supervisely_json(annot_filename, classes)
+                category_ids, masks, crowd_ids, status = process_supervisely_json(annot_filename, classes, width, height)
 
             areas, boxes = bounding_box(masks)
             img_vis = visualize_annotations(img, category_ids, masks, boxes, classes)
@@ -1534,7 +1553,7 @@ def update_train_dataset(config, cfg, train_list):
         print("{:d} images found!".format(len(images)))
         print("{:d} annotations found!".format(len(annotations)))
 
-        check_json_presence(config, config['traindir'], train_list, "train", cfg)
+        check_json_presence(config, config['traindir'], train_list, "train")
         print("Converting annotations...")
         create_json(config['dataroot'], config['traindir'], train_list, config['classes'], "train")
         
