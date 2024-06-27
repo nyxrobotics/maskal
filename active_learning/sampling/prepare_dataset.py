@@ -936,183 +936,48 @@ def highlight_missing_annotations(annot_folder, cur_annot_diff):
             print("")
     return diff_img_annot, cur_annot_diff
     
-def check_json_presence(config, imgdir, dataset, name, cfg=[]):
-    print("")
-    print("Checking {:s} annotations...".format(name))
-    rename_xml_files(imgdir)
-    all_images, annotations = list_files(imgdir)
-    img_basenames = [os.path.splitext(os.path.basename(img))[0] for img in dataset]
+def check_json_presence(config, imgdir, image_list, dataset_type):
+    try:
+        print(f"\nChecking {dataset_type} annotations...")
+        annotations = []
+        missing_annotations = []
 
-    # supervisely puts the json extension behind the image extension
-    annotation_basenames = [os.path.splitext(os.path.splitext(os.path.basename(annot))[0])[0] if os.path.splitext(annot)[0].lower().endswith(supported_cv2_formats) else os.path.splitext(os.path.basename(annot))[0] for annot in annotations]
+        for image in image_list:
+            base_name = os.path.splitext(image)[0]
+            json_file = f"{base_name}.json"
+            json_path = os.path.join(imgdir, json_file)
 
-    print("\n--")
-    print("img_basenames:")
-    for basename in img_basenames:
-        print(basename)
-    
-    print("\n--")
-    print("annotation_basenames:")
-    for basename in annotation_basenames:
-        print(basename)
-    
-    diff_img_annot = []
-    for c in range(len(img_basenames)):
-        img_basename = img_basenames[c]
-        if img_basename not in annotation_basenames:
-            diff_img_annot.append(img_basename)
-    diff_img_annot.sort()
-
-    print("\n--")
-    print("diff_img_annot:")
-    for diff in diff_img_annot:
-        print(diff)
-    
-    print("\n--")
-    ii32 = np.iinfo(np.int32)
-    cur_annot_diff = ii32.max
-    annot_folder = os.path.join(imgdir, "annotate")
-
-    # Check if diff_img_annot is empty before proceeding
-    if not diff_img_annot:
-        logger.error("No images to annotate in the list.")
-        return
-    
-    # copy the images that lack an annotation to the "annotate" subdirectory so that we can annotate them easily
-    if len(diff_img_annot) > 0:
-        annot_folder_present = os.path.isdir(annot_folder)
-        
-        if not annot_folder_present:
-            os.makedirs(annot_folder)
-        else:
-            shutil.rmtree(annot_folder)
-            os.makedirs(annot_folder)
-
-        for p in range(len(diff_img_annot)):
-            print(f"Processing diff_img_annot[{p}]: {diff_img_annot[p]}")
-            if diff_img_annot[p] in img_basenames:
-                search_idx = img_basenames.index(diff_img_annot[p])
-                image_copy = dataset[search_idx]
-                print(f"Copying {image_copy} to annotate folder")
-                shutil.copyfile(os.path.join(imgdir, image_copy), os.path.join(annot_folder, os.path.basename(image_copy)))
+            if not os.path.exists(json_path):
+                print(f"Warning: Annotation file {json_path} not found for image {image}")
+                missing_annotations.append(image)
             else:
-                logger.error(f"Image basename {diff_img_annot[p]} not found in img_basenames")
+                with open(json_path, 'r') as f:
+                    data = json.load(f)
+                    annotations.append(data)
 
-    # check whether all images have been annotated in the "annotate" subdirectory
-    print("\n--")
-    print("Checking files in annotate folder:")
-    if not config['auto_annotate']:
-        while len(diff_img_annot) > 0:
-            diff_img_annot, cur_annot_diff = highlight_missing_annotations(annot_folder, cur_annot_diff)
-    else:
-        if len(diff_img_annot) > 0:
-            print("Number of annotated:", len(diff_img_annot))
-            if config['export_format'] == 'supervisely':
-                out_ann_dir = mkdir_supervisely(annot_folder, config['dataroot'], config['supervisely_meta_json'])
+        if len(annotations) == 0:
+            raise IndexError("No annotations found")
 
-            rename_xml_files(annot_folder)
-            images, annotations = list_files(annot_folder)
-            use_coco = False
+        print(f"{len(annotations)} annotations found out of {len(image_list)} images.")
+        if len(missing_annotations) > 0:
+            print(f"Missing annotations for {len(missing_annotations)} images.")
+            for missing in missing_annotations:
+                print(f"Missing annotation for image: {missing}")
 
-            if not cfg:
-                cfg = get_cfg()
-                cfg.merge_from_file(model_zoo.get_config_file(config['network_config']))
-                cfg.NUM_GPUS = 1
+    except FileNotFoundError as fnf_error:
+        logger.error(f"FileNotFoundError: {fnf_error}")
+        sys.exit("Closing application")
+    except IndexError as ie:
+        logger.error(f"IndexError: {ie}")
+        sys.exit("Closing application")
+    except json.JSONDecodeError as json_error:
+        logger.error(f"JSONDecodeError: {json_error}")
+        sys.exit("Closing application")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        sys.exit("Closing application")
 
-                if config['pretrained_weights'].lower().endswith(".yaml"):
-                    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(config['pretrained_weights'])
-                elif config['pretrained_weights'].lower().endswith((".pth", ".pkl")):
-                    cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(config['classes'])
-                    cfg.MODEL.WEIGHTS = config['pretrained_weights']
 
-                cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = config['confidence_threshold']
-                cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = config['nms_threshold']
-                cfg.DATALOADER.NUM_WORKERS = 0
-                cfg.MODEL.ROI_HEADS.SOFTMAXES = False
-                
-                model = build_model(cfg)
-                checkpointer = DetectionCheckpointer(model)
-                checkpointer.load(cfg.MODEL.WEIGHTS)
-
-            predictor = DefaultPredictor(cfg)
-
-            for i in tqdm(range(len(images))):
-                # Load the RGB image
-                imgname = images[i]
-                basename = os.path.basename(imgname)
-                img = cv2.imread(os.path.join(annot_folder, imgname))
-                height, width, _ = img.shape
-
-                # Do the image inference and extract the outputs from Mask R-CNN
-                outputs = predictor(img)
-                instances = outputs["instances"].to("cpu")
-                classes = instances.pred_classes.numpy()
-                scores = instances.scores.numpy()
-                boxes = instances.pred_boxes.tensor.numpy()
-                masks = instances.pred_masks.numpy()
-
-                if use_coco:
-                    v = Visualizer(img[:, :, ::-1], MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), scale=1.2)
-                    class_labels = v.metadata.get("thing_classes", None)
-                else:
-                    class_labels = config['classes']
-
-                class_names = []
-                for h in range(len(classes)):
-                    class_id = classes[h]
-                    class_name = class_labels[class_id]
-                    class_names.append(class_name)
-                    
-                img_vis = visualize_mrcnn(img, classes, scores, masks, boxes, class_labels)
-
-                if config['export_format'] == 'labelme':
-                    write_labelme_annotations(annot_folder, basename, class_names, masks, height, width)
-                elif config['export_format'] == 'cvat':
-                    write_cvat_annotations(annot_folder, basename, class_names, masks, height, width)
-                elif config['export_format'] == 'supervisely':
-                    write_supervisely_annotations(out_ann_dir, basename, class_names, masks, height, width, config['supervisely_meta_json'])
-                    write_supervisely_annotations(annot_folder, basename, class_names, masks, height, width, config['supervisely_meta_json'])
-                elif config['export_format'] == "darwin":
-                    write_darwin_annotations(annot_folder, basename, class_names, masks, height, width)
-                else:
-                    logger.error("unsupported export_format in the maskAL.yaml file")
-                    sys.exit("Closing application")
-
-            diff_img_annot, cur_annot_diff = highlight_missing_annotations(annot_folder, cur_annot_diff)
-            while len(diff_img_annot) > 0:
-                diff_img_annot, cur_annot_diff = highlight_missing_annotations(annot_folder, cur_annot_diff)
-
-            if config['export_format'] == 'cvat':
-                create_zipfile(annot_folder)
-            
-            if config['export_format'] == 'supervisely':
-                print("Load the preprocessed folder '{:s}' into Supervisely \n\nAfter checking, copy-paste the updated json-annotations to folder '{:s}'\n".format(os.path.join(config['dataroot'], "out_supervisely"), annot_folder))
-                input("Press Enter to continue")
-            else:
-                input("Press Enter when all annotations have been checked in folder: {:s}".format(annot_folder))
-
-    if os.path.isdir(annot_folder):
-        # copy the annotations back to the imgdir
-        rename_xml_files(annot_folder)
-        images, annotations = list_files(annot_folder)
-        for a in range(len(annotations)):
-            annotation = annotations[a]
-            if config['export_format'] == 'supervisely':
-                subdirname = [os.path.dirname(imgb) for imgb in img_basenames if os.path.splitext(os.path.splitext(annotation)[0])[0] in imgb]
-            else:
-                subdirname = [os.path.dirname(imgb) for imgb in img_basenames if os.path.splitext(annotation)[0] in imgb]
-
-            if subdirname == [''] or subdirname == []:
-                shutil.copyfile(os.path.join(annot_folder, annotation), os.path.join(imgdir, annotation))
-            else:
-                shutil.copyfile(os.path.join(annot_folder, annotation), os.path.join(imgdir, subdirname[0], annotation))  
-
-        # remove the annotation-folder again
-        annot_folder_present = os.path.isdir(annot_folder)
-        if annot_folder_present:
-            time.sleep(3)
-            shutil.rmtree(annot_folder)
-            
 
 def smooth_contours(contours):
     ## thanks to: https://agniva.me/scipy/2016/10/25/contour-smoothing.html
@@ -1581,28 +1446,31 @@ def prepare_complete_dataset(rootdir, classes, traindir, valdir, testdir):
 def prepare_initial_dataset_randomly(config):
     try:
         for imgdir, name, init_ds in zip([config['traindir'], config['valdir'], config['testdir']], ['train', 'val', 'test'], [config['initial_datasize'], 0, 0]):
-            print("")
-            print("Processing {:s}-dataset: {:s}".format(name, imgdir))
+            print(f"\nProcessing {name}-dataset: {imgdir}")
             rename_xml_files(imgdir)
             images, annotations = list_files(imgdir)
-            print("{:d} images found!".format(len(images)))
-            print("{:d} annotations found!".format(len(annotations)))
+            print(f"{len(images)} images found!")
+            print(f"{len(annotations)} annotations found!")
 
             if init_ds > 0:
-                initial_train_images = random.sample(images, config['initial_datasize'])
+                initial_train_images = [img for img in images if os.path.exists(os.path.join(imgdir, os.path.splitext(img)[0] + '.json'))]
                 write_file(config['dataroot'], images, "train")
                 write_file(config['dataroot'], initial_train_images, "initial_train")
-                check_json_presence(config, imgdir, initial_train_images, "train")
+                if not check_json_presence(config, imgdir, initial_train_images, "train"):
+                    raise ValueError("No annotations found in the initial train set.")
                 create_json(config['dataroot'], imgdir, initial_train_images, config['classes'], "train")
             else:
                 write_file(config['dataroot'], images, name)
-                check_json_presence(config, imgdir, images, name)
+                if not check_json_presence(config, imgdir, images, name):
+                    raise ValueError(f"No annotations found in the {name} set.")
                 create_json(config['dataroot'], imgdir, images, config['classes'], name)
                 
     except Exception as e:
         print_exception(e)
         logger.error("Cannot create initial-datasets")
         sys.exit("Closing application")
+
+
 
 def prepare_initial_dataset(config):
     try:
@@ -1663,4 +1531,28 @@ def update_train_dataset(config, cfg, train_list):
     except Exception as e:
         print_exception(e)
         logger.error("Cannot update train-dataset")
+        sys.exit("Closing application")
+
+def train_model(config, cfg, dataset_dicts_train):
+    try:
+        print("Starting training...")
+        cfg.DATASETS.TRAIN = ("train_dataset",)
+        cfg.DATASETS.TEST = ()
+        cfg.DATALOADER.NUM_WORKERS = config['num_workers']
+        cfg.SOLVER.IMS_PER_BATCH = config['train_batch_size']
+        cfg.SOLVER.BASE_LR = config['learning_rate']
+        cfg.SOLVER.MAX_ITER = config['train_iterations_base']
+        cfg.SOLVER.STEPS = config['train_iterations_step_size']
+        cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 128
+        cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(config['classes'])
+
+        trainer = DefaultTrainer(cfg)
+        trainer.resume_or_load(resume=False)
+        trainer.train()
+
+        print("Training completed.")
+
+    except Exception as e:
+        print_exception(e)
+        logger.error("Error during training")
         sys.exit("Closing application")

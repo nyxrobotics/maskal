@@ -334,11 +334,11 @@ def Train_MaskRCNN(config, weightsfolder, gpu_num, iter, val_value, dropout_prob
                 except:
                     highest_value = self.val_value
 
-                self.logger.info("current-value ({:s}): {:.2f}, highest-value ({:s}): {:.2f}".format(self.metric, current_value, self.metric, highest_value))
+                self.logger.info(f"current-value ({self.metric}): {current_value:.2f}, highest-value ({self.metric}): {highest_value:.2f}")
 
                 if current_value > highest_value:
                     self.logger.info("saving best model...")
-                    self.trainer.checkpointer.save("best_model_{:s}".format(str(iter).zfill(3)))
+                    self.trainer.checkpointer.save(f"best_model_{str(iter).zfill(3)}")
                     self.trainer.storage.put_scalar('highest_value', current_value)
                     comm.synchronize()
             except:
@@ -350,7 +350,6 @@ def Train_MaskRCNN(config, weightsfolder, gpu_num, iter, val_value, dropout_prob
             if is_final or (self._period > 0 and next_iter % self._period == 0):
                 self.store_best_model()
             self.trainer.storage.put_scalars(timetest=12)
-
 
     ## CustomTrainer with evaluator and automatic checkpoint-saver
     class CustomTrainer(DefaultTrainer):
@@ -365,7 +364,6 @@ def Train_MaskRCNN(config, weightsfolder, gpu_num, iter, val_value, dropout_prob
             hooks.insert(-1, BestCheckpointer(iter, cfg.TEST.EVAL_PERIOD, val_value, 'segm/AP'))
             return hooks
 
-
     if init:
         register_coco_instances("train", {}, os.path.join(config['dataroot'], "train.json"), config['traindir'])
         train_metadata = MetadataCatalog.get("train")
@@ -379,7 +377,6 @@ def Train_MaskRCNN(config, weightsfolder, gpu_num, iter, val_value, dropout_prob
         register_coco_instances("train", {}, os.path.join(config['dataroot'], "train.json"), config['traindir'])
         train_metadata = MetadataCatalog.get("train")
         dataset_dicts_train = DatasetCatalog.get("train")
-
 
     ## add dropout layers to the architecture of Mask R-CNN
     cfg = get_cfg()
@@ -397,11 +394,10 @@ def Train_MaskRCNN(config, weightsfolder, gpu_num, iter, val_value, dropout_prob
     cfg.MODEL.ROI_HEADS.SOFTMAXES = False
     cfg.OUTPUT_DIR = weightsfolder
 
-
     ## initialize the network weights, with an option to do the transfer-learning on previous models
     if config['transfer_learning_on_previous_models'] == True:
-        if os.path.isfile(os.path.join(cfg.OUTPUT_DIR, "best_model_{:s}.pth".format(str(iter-1).zfill(3)))):
-            cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, "best_model_{:s}.pth".format(str(iter-1).zfill(3)))
+        if os.path.isfile(os.path.join(cfg.OUTPUT_DIR, f"best_model_{str(iter-1).zfill(3)}.pth")):
+            cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, f"best_model_{str(iter-1).zfill(3)}.pth")
         else:
             if os.path.isfile(os.path.join(cfg.OUTPUT_DIR, "model_final.pth")):
                 cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, "model_final.pth")
@@ -415,7 +411,6 @@ def Train_MaskRCNN(config, weightsfolder, gpu_num, iter, val_value, dropout_prob
             cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(config['pretrained_weights'])
         elif config['pretrained_weights'].lower().endswith((".pth", ".pkl")):
             cfg.MODEL.WEIGHTS = config['pretrained_weights']
-
 
     ## initialize the train-sampler
     cfg.DATALOADER.SAMPLER_TRAIN = config['train_sampler']
@@ -587,8 +582,108 @@ def random_pooling(pool_list, pool_size, cfg, config, max_entropy, mcd_iteration
 
     return pool    
 
-
 if __name__ == "__main__":
+    logger.addHandler(file_handler)
+    logger.info("Starting main-application")
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default='maskAL.yaml', help='yaml with the training parameters')
+    args = parser.parse_args()
+
+    try:
+        with open(args.config, 'rb') as file:
+            config = yaml.load(file, Loader=yaml.FullLoader)
+    except FileNotFoundError:
+        logger.error(f"Could not find configuration-file: {args.config}")
+        sys.exit("Closing application")
+
+    print("Configuration:")
+    for key, value in config.items():
+        print(key, ':', value)
+
+    config_ok = check_config_file(config, args.config, os.path.dirname(__file__) + '/types.yaml')
+    if not config_ok: 
+        sys.exit("Closing application")
+
+    config = process_config_file(config, ['strategy', 'mode', 'equal_pool_size', 'pool_size', 'dropout_probability', 'mcd_iterations', 'loops'])
+    os.environ["CUDA_VISIBLE_DEVICES"] = config['cuda_visible_devices']
+    gpu_num = len(config['cuda_visible_devices'])
+    check_direxcist(config['dataroot'])
+
+    weightsfolders, resultsfolders, csv_names = init_folders_and_files(config)
+    remove_initial_training_set(config['dataroot'])
+    max_entropy = calculate_max_entropy(config['classes'])
+
+    if config['auto_annotate'] and config['export_format'] == "supervisely":
+        if config['use_initial_train_dir']:
+            tiff_images, tiff_annotations = find_tiff_files(config['traindir'], config['valdir'], config['testdir'], config['initial_train_dir'])
+        else:
+            tiff_images, tiff_annotations = find_tiff_files(config['traindir'], config['valdir'], config['testdir'])
+        
+        if tiff_images != []:
+            print(f"\n{len(tiff_images)} images and {len(tiff_annotations)} annotations found with .tiff or .tif extension: unfortunately Supervisely does not support these extensions")
+            input(f"Press Enter to automatically convert the {len(tiff_images)} images and the {len(tiff_annotations)} annotations to .png extension")
+            convert_tiffs(tiff_images, tiff_annotations)
+            
+    if config['use_initial_train_dir']:
+        move_initial_train_dir(config['initial_train_dir'], config['traindir'], "images")
+        prepare_initial_dataset(config)
+        move_initial_train_dir(config['initial_train_dir'], config['traindir'], "annotations")
+    elif config['duplicate_initial_model_and_data']:
+        initial_train_files = read_train_file(config['initial_train_file'])
+        prepare_initial_dataset_from_list(config, initial_train_files)
+    else:
+        prepare_initial_dataset_randomly(config)
+        
+    ## active-learning
+    for strategy, equal_pool_size, pool_size, mcd_iterations, mode, dropout_probability, loops, weightsfolder, resultsfolder, csv_name in zip(config['strategy'], config['equal_pool_size'], config['pool_size'], config['mcd_iterations'], config['mode'], config['dropout_probability'], config['loops'], weightsfolders, resultsfolders, csv_names):
+        ## duplicate the initial model, when comparing the uncertainty sampling with the random sampling
+        if config['duplicate_initial_model_and_data']:
+            duplicated_weightsfolder = os.path.dirname(config['pretrained_weights'])
+            copy_initial_weight_file(duplicated_weightsfolder, weightsfolder, 0)
+            val_value_init = load_initial_val_value(duplicated_weightsfolder)
+            cfg, dataset_dicts_train, val_value = Train_MaskRCNN(config, weightsfolder, gpu_num, 1, val_value_init, dropout_probability, init=True, skip_training=True)
+        
+        ## train and evaluate Mask R-CNN on the randomly sampled initial dataset
+        else:
+            cfg, dataset_dicts_train, val_value = Train_MaskRCNN(config, weightsfolder, gpu_num, 0, 0, dropout_probability, init=True)
+            store_initial_val_value(val_value, weightsfolder)
+        
+        cfg = Eval_MaskRCNN(cfg, config, dataset_dicts_train, weightsfolder, resultsfolder, csv_name, 0, init=True)
+        train_names = get_train_names(dataset_dicts_train, config['traindir'])
+        write_train_files(train_names, resultsfolder, 0)
+        
+        if not equal_pool_size:
+            pool_size_list = list(chain.from_iterable([[pool_size[ll]] * loops[ll] for ll in range(len(loops))]))
+            loops = sum(loops)
+        
+        ## do the iterative pooling
+        for l in range(loops):
+            copy_previous_weights(weightsfolder, l+1)
+            pool_list = create_pool_list(config, train_names)
+
+            if not equal_pool_size:
+                pool_size = pool_size_list[l]
+
+            if strategy + '_pooling' in dir():
+                ## do the pooling (eval is a python-method that executes a function with a string-input)
+                pool = eval(strategy + '_pooling(pool_list, pool_size, cfg, config, max_entropy, mcd_iterations, mode)')
+
+                ## update the training list and retrain the algorithm
+                train_list = train_names + list(pool.keys())
+                update_train_dataset(config, cfg, train_list)
+                cfg, dataset_dicts_train, val_value = Train_MaskRCNN(config, weightsfolder, gpu_num, l+1, val_value, dropout_probability, init=False)
+
+                ## evaluate and write the pooled image-names to a txt-file
+                cfg = Eval_MaskRCNN(cfg, config, dataset_dicts_train, weightsfolder, resultsfolder, csv_name, l+1, init=False)
+                train_names = get_train_names(dataset_dicts_train, config['traindir'])
+                write_train_files(train_names, resultsfolder, l+1, pool)
+            else:
+                logger.error(f"The {strategy}-strategy is not defined")
+                sys.exit("Closing application")
+
+    logger.info("Active learning is finished!")
+
     logger.addHandler(file_handler)
     logger.info("Starting main-application")
     
