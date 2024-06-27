@@ -947,13 +947,12 @@ def check_json_presence(config, imgdir, image_list, dataset_type):
             json_file = f"{base_name}.json"
             json_path = os.path.join(imgdir, json_file)
 
-            if not os.path.exists(json_path):
-                print(f"Warning: Annotation file {json_path} not found for image {image}")
-                missing_annotations.append(image)
-            else:
+            if os.path.exists(json_path):
                 with open(json_path, 'r') as f:
                     data = json.load(f)
                     annotations.append(data)
+            else:
+                missing_annotations.append(image)
 
         if len(annotations) == 0:
             raise IndexError("No annotations found")
@@ -1464,10 +1463,8 @@ def prepare_initial_dataset_randomly(config):
             print(f"{len(annotated_images)} annotated images found!")
 
             write_file(config['dataroot'], images, name)
-            if not check_json_presence(config, imgdir, images, name):
-                logger.warning(f"No annotations found in the {name} set.")
-            create_json(config['dataroot'], imgdir, images, config['classes'], name)
-
+            create_json(config['dataroot'], imgdir, annotated_images, config['classes'], name)
+            
             if name == 'train':
                 all_annotated_images.extend(annotated_images)
 
@@ -1476,8 +1473,7 @@ def prepare_initial_dataset_randomly(config):
 
         # Initial train dataset should be created from annotated images in the train dataset
         write_file(config['dataroot'], all_annotated_images, "initial_train")
-        if not check_json_presence(config, config['traindir'], all_annotated_images, 'initial_train'):
-            raise ValueError("No annotations found in the initial train set.")
+        check_json_presence(config, config['traindir'], all_annotated_images, 'initial_train')
         create_json(config['dataroot'], config['traindir'], all_annotated_images, config['classes'], 'initial_train')
 
     except Exception as e:
