@@ -33,8 +33,7 @@ from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog
 
-
-## initialize the logging
+# Initialize the logging
 log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s \n'
 logger = logging.getLogger(__name__)
 logger.setLevel('DEBUG')
@@ -43,16 +42,13 @@ formatter = logging.Formatter(log_format)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
-
 supported_cv2_formats = (".bmp", ".dib", ".jpeg", ".jpg", ".jpe", ".jp2", ".png", ".pbm", ".pgm", ".ppm", ".sr", ".ras", ".tiff", ".tif")
-
 
 def print_exception(e):
     tb = sys.exc_info()[-1]
     stk = traceback.extract_tb(tb, 2)
     fname = stk[-1][2]
     logger.error(f'Error in function {fname}: '+ repr(e))
-
 
 def list_files(rootdir):
     images = []
@@ -85,7 +81,6 @@ def list_files(rootdir):
         annotations.sort()
 
     return images, annotations
-
 
 def find_tiff_files(traindir, valdir=[], testdir=[], initial_traindir=[]):
     tiff_images = []
@@ -121,7 +116,6 @@ def find_tiff_files(traindir, valdir=[], testdir=[], initial_traindir=[]):
                 tiff_annotations.sort()
 
     return tiff_images, tiff_annotations
-
 
 def matching_images_and_annotations(rootdir):
     images = []
@@ -170,7 +164,6 @@ def matching_images_and_annotations(rootdir):
 
     return matching_images, matching_annotations
 
-
 def rename_xml_files(annotdir):
     if os.path.isdir(annotdir): 
         all_files = os.listdir(annotdir)
@@ -191,7 +184,6 @@ def rename_xml_files(annotdir):
                         xml_name = img_name.replace(file_ext, '.xml')
 
                         os.rename(os.path.join(annotdir, annotation), os.path.join(annotdir, xml_name))
-
 
 def process_labelme_json(jsonfile, classnames):
     group_ids = []
@@ -295,6 +287,15 @@ def process_labelme_json(jsonfile, classnames):
                 pts = np.asarray(points).astype(np.float32).reshape(-1,1,2)   
                 points = np.asarray(pts).flatten().tolist()
 
+                # Ensure polygon points are within image boundaries
+                for i in range(0, len(points), 2):
+                    if points[i] < 0 or points[i] >= width:
+                        logger.warning(f"X-coordinate {points[i]} is out of bounds. Clamping to image boundary.")
+                        points[i] = max(0, min(points[i], width - 1))
+                    if points[i+1] < 0 or points[i+1] >= height:
+                        logger.warning(f"Y-coordinate {points[i+1]} is out of bounds. Clamping to image boundary.")
+                        points[i+1] = max(0, min(points[i+1], height - 1))
+
             masks[fill_id].append(points)
 
             ## labelme version 4.5.6 does not have a crowd_id, so fill it with zeros
@@ -304,7 +305,6 @@ def process_labelme_json(jsonfile, classnames):
             status = "unsuccessful"
 
     return category_ids, masks, crowd_ids, status
-
 
 def process_darwin_json(jsonfile, classnames):
     
@@ -364,7 +364,6 @@ def process_darwin_json(jsonfile, classnames):
         fill_id += 1
 
     return category_ids, masks, crowd_ids, status
-
 
 def process_cvat_xml(xmlfile, classnames):
     group_ids = []
@@ -430,6 +429,15 @@ def process_cvat_xml(xmlfile, classnames):
                             points.append(float(path_points[h]['x']))
                             points.append(float(path_points[h]['y']))
 
+                        # Ensure polygon points are within image boundaries
+                        for i in range(0, len(points), 2):
+                            if points[i] < 0 or points[i] >= width:
+                                logger.warning(f"X-coordinate {points[i]} is out of bounds. Clamping to image boundary.")
+                                points[i] = max(0, min(points[i], width - 1))
+                            if points[i+1] < 0 or points[i+1] >= height:
+                                logger.warning(f"Y-coordinate {points[i+1]} is out of bounds. Clamping to image boundary.")
+                                points[i+1] = max(0, min(points[i+1], height - 1))
+
                         masks[fill_id].append(points)
 
                 crowd_ids[fill_id] = 0
@@ -460,6 +468,15 @@ def process_cvat_xml(xmlfile, classnames):
                         points.append(float(path_points[h]['x']))
                         points.append(float(path_points[h]['y']))
 
+                    # Ensure polygon points are within image boundaries
+                    for i in range(0, len(points), 2):
+                        if points[i] < 0 or points[i] >= width:
+                            logger.warning(f"X-coordinate {points[i]} is out of bounds. Clamping to image boundary.")
+                            points[i] = max(0, min(points[i], width - 1))
+                        if points[i+1] < 0 or points[i+1] >= height:
+                            logger.warning(f"Y-coordinate {points[i+1]} is out of bounds. Clamping to image boundary.")
+                            points[i+1] = max(0, min(points[i+1], height - 1))
+
                     masks[fill_id].append(points)
 
             crowd_ids[fill_id] = 0
@@ -468,7 +485,6 @@ def process_cvat_xml(xmlfile, classnames):
             status = "unsuccessful"
 
     return category_ids, masks, crowd_ids, status
-
 
 def mkdir_supervisely(img_dir, write_dir, supervisely_meta_json):
     out_dir =  os.path.join(write_dir, "out_supervisely")
@@ -497,7 +513,6 @@ def mkdir_supervisely(img_dir, write_dir, supervisely_meta_json):
 
     print("Output folder:", out_dir)
     return out_ann_dir  
-
 
 def process_supervisely_json(jsonfile, classnames):
     with open(jsonfile, 'r') as json_file:
@@ -568,6 +583,15 @@ def process_supervisely_json(jsonfile, classnames):
                 for h in range(len(exterior_points)):
                     points.append(exterior_points[h][0])
                     points.append(exterior_points[h][1])
+
+                    # Ensure polygon points are within image boundaries
+                    if points[-2] < 0 or points[-2] >= width:
+                        logger.warning(f"X-coordinate {points[-2]} is out of bounds. Clamping to image boundary.")
+                        points[-2] = max(0, min(points[-2], width - 1))
+                    if points[-1] < 0 or points[-1] >= height:
+                        logger.warning(f"Y-coordinate {points[-1]} is out of bounds. Clamping to image boundary.")
+                        points[-1] = max(0, min(points[-1], height - 1))
+
                 masks[fill_id].append(points)
 
             crowd_ids[fill_id] = 0
@@ -579,7 +603,6 @@ def process_supervisely_json(jsonfile, classnames):
 
     return category_ids, masks, crowd_ids, status
 
-
 def bounding_box(masks):
     areas = []
     boxes = []
@@ -587,7 +610,6 @@ def bounding_box(masks):
     for _ in range(len(masks)):
         areas.append([])
         boxes.append([])
-
 
     for i in range(len(masks)):
         points = masks[i]
@@ -601,7 +623,6 @@ def bounding_box(masks):
         boxes[i] = [bbx,bby,bbw,bbh]
 
     return areas, boxes
-
 
 def visualize_annotations(img, category_ids, masks, boxes, classes):
     colors = [(0, 255, 0), (255, 0, 0), (255, 0, 255), (0, 0, 255), (0, 255, 255), (255, 255, 255)]
@@ -643,7 +664,6 @@ def visualize_annotations(img, category_ids, masks, boxes, classes):
         img_vis = cv2.putText(img_vis, text_str, (text_pt[0], text_pt[1]), font_face, font_scale, text_color2, font_thickness, cv2.LINE_AA)
 
     return img_vis
-
 
 def visualize_mrcnn(img_np, classes, scores, masks, boxes, class_names):
     masks = masks.astype(dtype=np.uint8)
@@ -708,12 +728,10 @@ def visualize_mrcnn(img_np, classes, scores, masks, boxes, class_names):
 
     return img_mask
 
-
 def write_file(imgdir, images, name):
     with open(os.path.join(imgdir, "{:s}.txt".format(name)), 'w') as f:
         for img in images:
             f.write("{:s}\n".format(img))
-
 
 def split_datasets_randomly(rootdir, images, train_val_test_split, initial_datasize):
     all_ids = np.arange(len(images))
@@ -737,7 +755,6 @@ def split_datasets_randomly(rootdir, images, train_val_test_split, initial_datas
     write_file(rootdir, test_images, "test") 
     
     return [initial_train_images, val_images, test_images], ["train", "val", "test"]
-
 
 def create_json(rootdir, imgdir, images, classes, name):
     date_created = datetime.datetime.now()
@@ -894,7 +911,6 @@ def create_json(rootdir, imgdir, images, classes, name):
     with open(os.path.join(rootdir, output_file), 'w') as outfile:
         json.dump(writedata, outfile)
 
-
 def highlight_missing_annotations(annot_folder, cur_annot_diff):
     rename_xml_files(annot_folder)
     images, annotations = list_files(annot_folder)
@@ -920,7 +936,6 @@ def highlight_missing_annotations(annot_folder, cur_annot_diff):
             print("")
     return diff_img_annot, cur_annot_diff
     
-
 def check_json_presence(config, imgdir, dataset, name, cfg=[]):
     print("")
     print("Checking {:s} annotations...".format(name))
@@ -985,7 +1000,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
 
     # check whether all images have been annotated in the "annotate" subdirectory
     print("\n--")
-    print("Checkig files in annotate folder:")
+    print("Checking files in annotate folder:")
     if not config['auto_annotate']:
         while len(diff_img_annot) > 0:
             diff_img_annot, cur_annot_diff = highlight_missing_annotations(annot_folder, cur_annot_diff)
@@ -1006,7 +1021,6 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
 
                 if config['pretrained_weights'].lower().endswith(".yaml"):
                     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(config['pretrained_weights'])
-                    # use_coco = True
                 elif config['pretrained_weights'].lower().endswith((".pth", ".pkl")):
                     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(config['classes'])
                     cfg.MODEL.WEIGHTS = config['pretrained_weights']
@@ -1098,7 +1112,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
         if annot_folder_present:
             time.sleep(3)
             shutil.rmtree(annot_folder)
-
+            
 
 def smooth_contours(contours):
     ## thanks to: https://agniva.me/scipy/2016/10/25/contour-smoothing.html
@@ -1115,7 +1129,6 @@ def smooth_contours(contours):
         smoothened.append(np.asarray(res_array, dtype=np.int32))
 
     return smoothened
-
 
 def write_labelme_annotations(write_dir, basename, class_names, masks, height, width):
     masks = masks.astype(np.uint8)
@@ -1143,10 +1156,10 @@ def write_labelme_annotations(write_dir, basename, class_names, masks, height, w
                     contours_lowpoly = cv2.approxPolyDP(contours_unfiltered[cnts], 0.004*cv2.arcLength(contours_unfiltered[cnts], True), True)
                     contours.append(contours_lowpoly)
 
-            # try:
-            #     contours = smooth_contours(contours)
-            # except:
-            #     pass
+            try:
+                contours = smooth_contours(contours)
+            except:
+                pass
                
             if len(contours) > 0:
                 useful_masks = True
@@ -1199,7 +1212,6 @@ def write_labelme_annotations(write_dir, basename, class_names, masks, height, w
         if useful_masks:
             with open(os.path.join(write_dir, jn), 'w') as outfile:
                 json.dump(writedata, outfile)
-
 
 def write_darwin_annotations(write_dir, basename, class_names, masks, height, width):
     masks = masks.astype(np.uint8)
@@ -1281,7 +1293,6 @@ def write_darwin_annotations(write_dir, basename, class_names, masks, height, wi
         if useful_masks:
             with open(os.path.join(write_dir, jn), 'w') as outfile:
                 json.dump(writedata, outfile)
-
 
 def write_cvat_annotations(write_dir, basename, class_names, masks, height, width):
     masks = masks.astype(np.uint8)
@@ -1388,14 +1399,12 @@ def write_cvat_annotations(write_dir, basename, class_names, masks, height, widt
         if useful_masks:
             tree.write(os.path.join(write_dir, xmln))
 
-
 def create_zipfile(annot_folder):
     zipObj = ZipFile(os.path.join(annot_folder, 'cvat_annotations.zip'), 'w')
     for file in os.listdir(annot_folder):
         if file.endswith(".xml"):
             zipObj.write(os.path.join(annot_folder, file))
     zipObj.close()
-
 
 def write_supervisely_annotations(write_dir, basename, class_names, masks, height, width, meta_json):
     with open(meta_json, 'r') as json_file:
@@ -1471,7 +1480,6 @@ def write_supervisely_annotations(write_dir, basename, class_names, masks, heigh
             with open(os.path.join(write_dir, jn), 'w') as outfile:
                 json.dump(writedata, outfile)
 
-
 def convert_tiffs(tiff_files, tiff_annotations=[]):
     print("\nConverting the tif/tiff images to png")
     for tf in tqdm(range(len(tiff_files))):
@@ -1489,7 +1497,6 @@ def convert_tiffs(tiff_files, tiff_annotations=[]):
         if annot_file.lower().endswith(".tif.json"):
             output_json = annot_file.split(".tif.json")[0] + ".png.json"
         os.rename(annot_file, output_json)
-
 
 ## the function below is heavily inspired by the function "repeat_factors_from_category_frequency" in maskAL/detectron2/data/samplers/distributed_sampler.py
 def calculate_repeat_threshold(config, dataset_dicts_train):
@@ -1518,7 +1525,6 @@ def calculate_repeat_threshold(config, dataset_dicts_train):
     repeat_threshold = np.clip(repeat_threshold, 0, 1)
     return float(repeat_threshold)
 
-
 def calculate_iterations(config, dataset_dicts_train):
     div_factor = math.ceil(len(dataset_dicts_train)/config['step_image_number'])
     if div_factor == 1:
@@ -1527,7 +1533,6 @@ def calculate_iterations(config, dataset_dicts_train):
         max_iterations = config['train_iterations_base'] + ((div_factor - 1) * config['train_iterations_step_size'])
     steps = [int(s * max_iterations) for s in config['step_ratios']]
     return int(max_iterations), steps
-
 
 def read_train_file(txt_file):
     initial_train_files = []
@@ -1541,7 +1546,6 @@ def read_train_file(txt_file):
             initial_train_files.append(train_file)
     txtfile.close()
     return initial_train_files 
-    
 
 def prepare_all_dataset_randomly(rootdir, imgdir, classes, train_val_test_split, initial_datasize):
     rename_xml_files(imgdir)
@@ -1556,7 +1560,6 @@ def prepare_all_dataset_randomly(rootdir, imgdir, classes, train_val_test_split,
     print("Converting annotations...")
     for dataset, name in zip(datasets, names):
         create_json(rootdir, imgdir, dataset, classes, name)   
-
 
 def prepare_complete_dataset(rootdir, classes, traindir, valdir, testdir):
     try:
@@ -1574,7 +1577,6 @@ def prepare_complete_dataset(rootdir, classes, traindir, valdir, testdir):
     except:
         logger.error("Cannot create complete-dataset")
         sys.exit("Closing application")   
-
 
 def prepare_initial_dataset_randomly(config):
     try:
@@ -1602,8 +1604,6 @@ def prepare_initial_dataset_randomly(config):
         logger.error("Cannot create initial-datasets")
         sys.exit("Closing application")
 
-
-
 def prepare_initial_dataset(config):
     try:
         for i, (imgdir, name) in enumerate(zip([config['traindir'], config['initial_train_dir'], config['valdir'], config['testdir']], ['train', 'initial_train', 'val', 'test'])):
@@ -1625,7 +1625,6 @@ def prepare_initial_dataset(config):
         print_exception(e)
         logger.error("Cannot create initial-datasets")
         sys.exit("Closing application")
-
 
 def prepare_initial_dataset_from_list(config, train_list):
     try:
@@ -1649,7 +1648,6 @@ def prepare_initial_dataset_from_list(config, train_list):
         print_exception(e)
         logger.error("Cannot create initial-datasets")
         sys.exit("Closing application")      
-
 
 def update_train_dataset(config, cfg, train_list):
     try:
