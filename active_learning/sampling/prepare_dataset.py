@@ -248,7 +248,9 @@ def process_labelme_json(jsonfile, classnames):
             category_ids[fill_id] = category_id
             run_further = True
         except:
+            logger.info(f"Processing {jsonfile}")
             print("Cannot find the class name (please check the annotation files)")
+            os.remove(jsonfile)
             run_further = False
 
         if run_further:
