@@ -930,6 +930,16 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
 
     # supervisely puts the json extension behind the image extension
     annotation_basenames = [os.path.splitext(os.path.splitext(os.path.basename(annot))[0])[0] if os.path.splitext(annot)[0].lower().endswith(supported_cv2_formats) else os.path.splitext(os.path.basename(annot))[0] for annot in annotations]
+
+    print("\n--")
+    print("img_basenames:")
+    for basename in img_basenames:
+        print(basename)
+    
+    print("\n--")
+    print("annotation_basenames:")
+    for basename in annotation_basenames:
+        print(basename)
     
     diff_img_annot = []
     for c in range(len(img_basenames)):
@@ -937,7 +947,13 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
         if img_basename not in annotation_basenames:
             diff_img_annot.append(img_basename)
     diff_img_annot.sort()
+
+    print("\n--")
+    print("diff_img_annot:")
+    for diff in diff_img_annot:
+        print(diff)
     
+    print("\n--")
     ii32 = np.iinfo(np.int32)
     cur_annot_diff = ii32.max
     annot_folder = os.path.join(imgdir, "annotate")
@@ -958,17 +974,24 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
             os.makedirs(annot_folder)
 
         for p in range(len(diff_img_annot)):
-            search_idx = img_basenames.index(diff_img_annot[p])
-            image_copy = dataset[search_idx]
-            shutil.copyfile(os.path.join(imgdir, image_copy), os.path.join(annot_folder, os.path.basename(image_copy)))
+            print(f"Processing diff_img_annot[{p}]: {diff_img_annot[p]}")
+            if diff_img_annot[p] in img_basenames:
+                search_idx = img_basenames.index(diff_img_annot[p])
+                image_copy = dataset[search_idx]
+                print(f"Copying {image_copy} to annotate folder")
+                shutil.copyfile(os.path.join(imgdir, image_copy), os.path.join(annot_folder, os.path.basename(image_copy)))
+            else:
+                logger.error(f"Image basename {diff_img_annot[p]} not found in img_basenames")
 
     # check whether all images have been annotated in the "annotate" subdirectory
+    print("\n--")
+    print("Checkig files in annotate folder:")
     if not config['auto_annotate']:
         while len(diff_img_annot) > 0:
             diff_img_annot, cur_annot_diff = highlight_missing_annotations(annot_folder, cur_annot_diff)
     else:
         if len(diff_img_annot) > 0:
-            print("len(diff_img_annot):",len(diff_img_annot))
+            print("Number of annotated:", len(diff_img_annot))
             if config['export_format'] == 'supervisely':
                 out_ann_dir = mkdir_supervisely(annot_folder, config['dataroot'], config['supervisely_meta_json'])
 
