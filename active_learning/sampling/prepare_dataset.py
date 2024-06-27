@@ -919,7 +919,40 @@ def highlight_missing_annotations(annot_folder, cur_annot_diff):
             cur_annot_diff = len(diff_img_annot)
             print("")
     return diff_img_annot, cur_annot_diff
-    
+
+def process_annotation_file(annotation_file, image_file, export_format):
+    with open(annotation_file, 'r') as file:
+        annotation_data = json.load(file)
+
+    if export_format == "labelme":
+        if "shapes" not in annotation_data or not annotation_data["shapes"]:
+            os.remove(annotation_file)
+            os.remove(image_file)
+            return False
+
+        # Update imageData and imagePath for labelme format
+        annotation_data["imageData"] = None
+        annotation_data["imagePath"] = os.path.basename(image_file)
+
+    image = cv2.imread(image_file)
+    img_height, img_width = image.shape[:2]
+
+    # Adjust annotation image size
+    if annotation_data["imageHeight"] != img_height or annotation_data["imageWidth"] != img_width:
+        scale_x = img_width / annotation_data["imageWidth"]
+        scale_y = img_height / annotation_data["imageHeight"]
+        annotation_data["imageHeight"] = img_height
+        annotation_data["imageWidth"] = img_width
+
+        for shape in annotation_data["shapes"]:
+            for point in shape["points"]:
+                point[0] = round(min(max(point[0] * scale_x, 0), img_width - 1), 2)
+                point[1] = round(min(max(point[1] * scale_y, 0), img_height - 1), 2)
+
+    with open(annotation_file, 'w') as file:
+        json.dump(annotation_data, file, indent=4)
+
+    return True
 
 def check_json_presence(config, imgdir, dataset, name, cfg=[]):
     print("")
@@ -928,24 +961,24 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
     all_images, annotations = list_files(imgdir)
     img_basenames = [os.path.splitext(img)[0] for img in dataset]
 
-    ## supervisely puts the json extension behind the image extension
+    # supervisely puts the json extension behind the image extension
     annotation_basenames = [os.path.splitext(os.path.splitext(annot)[0])[0] if os.path.splitext(annot)[0].lower().endswith(supported_cv2_formats) else os.path.splitext(annot)[0] for annot in annotations]
-    
+
     diff_img_annot = []
     for c in range(len(img_basenames)):
         img_basename = img_basenames[c]
         if img_basename not in annotation_basenames:
             diff_img_annot.append(img_basename)
     diff_img_annot.sort()
-    
+
     ii32 = np.iinfo(np.int32)
     cur_annot_diff = ii32.max
     annot_folder = os.path.join(imgdir, "annotate")
 
-    ## copy the images that lack an annotation to the "annotate" subdirectory so that we can annotate them easily
+    # copy the images that lack an annotation to the "annotate" subdirectory so that we can annotate them easily
     if len(diff_img_annot) > 0:
         annot_folder_present = os.path.isdir(annot_folder)
-        
+
         if not annot_folder_present:
             os.makedirs(annot_folder)
         else:
@@ -957,7 +990,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
             image_copy = dataset[search_idx]
             shutil.copyfile(os.path.join(imgdir, image_copy), os.path.join(annot_folder, os.path.basename(image_copy)))
 
-    ## check whether all images have been annotated in the "annotate" subdirectory
+    # check whether all images have been annotated in the "annotate" subdirectory
     if not config['auto_annotate']:
         while len(diff_img_annot) > 0:
             diff_img_annot, cur_annot_diff = highlight_missing_annotations(annot_folder, cur_annot_diff)
@@ -987,7 +1020,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
                 cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = config['nms_threshold']
                 cfg.DATALOADER.NUM_WORKERS = 0
                 cfg.MODEL.ROI_HEADS.SOFTMAXES = False
-                
+
                 model = build_model(cfg)
                 checkpointer = DetectionCheckpointer(model)
                 checkpointer.load(cfg.MODEL.WEIGHTS)
@@ -1020,7 +1053,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
                     class_id = classes[h]
                     class_name = class_labels[class_id]
                     class_names.append(class_name)
-                    
+
                 img_vis = visualize_mrcnn(img, classes, scores, masks, boxes, class_labels)
 
                 if config['export_format'] == 'labelme':
@@ -1042,7 +1075,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
 
             if config['export_format'] == 'cvat':
                 create_zipfile(annot_folder)
-            
+
             if config['export_format'] == 'supervisely':
                 print("Load the preprocessed folder '{:s}' into Supervisely \n\nAfter checking, copy-paste the updated json-annotations to folder '{:s}'\n".format(os.path.join(config['dataroot'], "out_supervisely"), annot_folder))
                 input("Press Enter to continue")
@@ -1050,7 +1083,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
                 input("Press Enter when all annotations have been checked in folder: {:s}".format(annot_folder))
 
     if os.path.isdir(annot_folder):
-        ## copy the annotations back to the imgdir
+        # copy the annotations back to the imgdir
         rename_xml_files(annot_folder)
         images, annotations = list_files(annot_folder)
         for a in range(len(annotations)):
@@ -1063,14 +1096,17 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
             if subdirname == [''] or subdirname == []:
                 shutil.copyfile(os.path.join(annot_folder, annotation), os.path.join(imgdir, annotation))
             else:
-                shutil.copyfile(os.path.join(annot_folder, annotation), os.path.join(imgdir, subdirname[0], annotation))  
+                shutil.copyfile(os.path.join(annot_folder, annotation), os.path.join(imgdir, subdirname[0], annotation))
 
-        ## remove the annotation-folder again
+            # Process the annotation file to ensure it meets the specified requirements
+            image_file = os.path.join(imgdir, os.path.basename(annotation).replace('.json', ''))
+            process_annotation_file(os.path.join(imgdir, annotation), image_file, config['export_format'])
+
+        # remove the annotation-folder again
         annot_folder_present = os.path.isdir(annot_folder)
         if annot_folder_present:
             time.sleep(3)
             shutil.rmtree(annot_folder)
-
 
 def smooth_contours(contours):
     ## thanks to: https://agniva.me/scipy/2016/10/25/contour-smoothing.html
