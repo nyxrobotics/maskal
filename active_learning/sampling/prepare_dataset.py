@@ -187,7 +187,6 @@ def rename_xml_files(annotdir):
 
 def process_labelme_json(jsonfile, classnames, width, height):
     group_ids = []
-
     with open(jsonfile, 'r') as json_file:
         data = json.load(json_file)
         for p in data['shapes']:
@@ -240,6 +239,7 @@ def process_labelme_json(jsonfile, classnames, width, height):
             category_ids[fill_id] = category_id
             run_further = True
         except:
+            logger.info(f"Processing {jsonfile}")
             print("Cannot find the class name (please check the annotation files)")
             run_further = False
 
