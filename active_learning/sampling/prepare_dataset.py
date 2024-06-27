@@ -1443,33 +1443,41 @@ def prepare_complete_dataset(rootdir, classes, traindir, valdir, testdir):
         logger.error("Cannot create complete-dataset")
         sys.exit("Closing application")   
 
+
 def prepare_initial_dataset_randomly(config):
     try:
-        for imgdir, name, init_ds in zip([config['traindir'], config['valdir'], config['testdir']], ['train', 'val', 'test'], [config['initial_datasize'], 0, 0]):
+        all_annotated_images = []
+
+        for imgdir, name in zip([config['traindir'], config['valdir'], config['testdir']], ['train', 'val', 'test']):
             print(f"\nProcessing {name}-dataset: {imgdir}")
             rename_xml_files(imgdir)
             images, annotations = list_files(imgdir)
             print(f"{len(images)} images found!")
             print(f"{len(annotations)} annotations found!")
 
-            if init_ds > 0:
-                initial_train_images = [img for img in images if os.path.exists(os.path.join(imgdir, os.path.splitext(img)[0] + '.json'))]
-                write_file(config['dataroot'], images, "train")
-                write_file(config['dataroot'], initial_train_images, "initial_train")
-                if not check_json_presence(config, imgdir, initial_train_images, "train"):
-                    raise ValueError("No annotations found in the initial train set.")
-                create_json(config['dataroot'], imgdir, initial_train_images, config['classes'], "train")
-            else:
+            annotated_images = [img for img in images if os.path.exists(os.path.join(imgdir, os.path.splitext(img)[0] + '.json'))]
+            print(f"{len(annotated_images)} annotated images found!")
+            
+            all_annotated_images.extend(annotated_images)
+
+            if name != 'train':
                 write_file(config['dataroot'], images, name)
                 if not check_json_presence(config, imgdir, images, name):
                     raise ValueError(f"No annotations found in the {name} set.")
                 create_json(config['dataroot'], imgdir, images, config['classes'], name)
-                
+
+        if not all_annotated_images:
+            raise ValueError("No annotations found in the initial train set.")
+
+        write_file(config['dataroot'], all_annotated_images, "initial_train")
+        if not check_json_presence(config, config['traindir'], all_annotated_images, 'train'):
+            raise ValueError("No annotations found in the initial train set.")
+        create_json(config['dataroot'], config['traindir'], all_annotated_images, config['classes'], 'train')
+
     except Exception as e:
         print_exception(e)
         logger.error("Cannot create initial-datasets")
         sys.exit("Closing application")
-
 
 
 def prepare_initial_dataset(config):
