@@ -1462,22 +1462,23 @@ def prepare_initial_dataset_randomly(config):
 
             annotated_images = [img for img in images if os.path.exists(os.path.join(imgdir, os.path.splitext(img)[0] + '.json'))]
             print(f"{len(annotated_images)} annotated images found!")
-            
-            all_annotated_images.extend(annotated_images)
 
-            if name != 'train' and name != 'test' and name != 'val':
-                write_file(config['dataroot'], images, name)
-                if not check_json_presence(config, imgdir, images, name):
-                    logger.warning(f"No annotations found in the {name} set.")
-                create_json(config['dataroot'], imgdir, images, config['classes'], name)
+            write_file(config['dataroot'], images, name)
+            if not check_json_presence(config, imgdir, images, name):
+                logger.warning(f"No annotations found in the {name} set.")
+            create_json(config['dataroot'], imgdir, images, config['classes'], name)
+
+            if name == 'train':
+                all_annotated_images.extend(annotated_images)
 
         if not all_annotated_images:
             raise ValueError("No annotations found in the initial train set.")
 
+        # Initial train dataset should be created from annotated images in the train dataset
         write_file(config['dataroot'], all_annotated_images, "initial_train")
-        if not check_json_presence(config, config['traindir'], all_annotated_images, 'train'):
+        if not check_json_presence(config, config['traindir'], all_annotated_images, 'initial_train'):
             raise ValueError("No annotations found in the initial train set.")
-        create_json(config['dataroot'], config['traindir'], all_annotated_images, config['classes'], 'train')
+        create_json(config['dataroot'], config['traindir'], all_annotated_images, config['classes'], 'initial_train')
 
     except Exception as e:
         print_exception(e)
