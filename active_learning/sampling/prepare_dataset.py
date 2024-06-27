@@ -1447,8 +1447,13 @@ def prepare_complete_dataset(rootdir, classes, traindir, valdir, testdir):
 def prepare_initial_dataset_randomly(config):
     try:
         all_annotated_images = []
-
-        for imgdir, name in zip([config['traindir'], config['valdir'], config['testdir']], ['train', 'val', 'test']):
+        datasets = [
+            (config['traindir'], 'train'),
+            (config['valdir'], 'val'),
+            (config['testdir'], 'test')
+        ]
+        
+        for imgdir, name in datasets:
             print(f"\nProcessing {name}-dataset: {imgdir}")
             rename_xml_files(imgdir)
             images, annotations = list_files(imgdir)
@@ -1460,10 +1465,10 @@ def prepare_initial_dataset_randomly(config):
             
             all_annotated_images.extend(annotated_images)
 
-            if name != 'train':
+            if name != 'train' and name != 'test' and name != 'val':
                 write_file(config['dataroot'], images, name)
                 if not check_json_presence(config, imgdir, images, name):
-                    raise ValueError(f"No annotations found in the {name} set.")
+                    logger.warning(f"No annotations found in the {name} set.")
                 create_json(config['dataroot'], imgdir, images, config['classes'], name)
 
         if not all_annotated_images:
