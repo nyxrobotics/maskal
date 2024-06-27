@@ -926,10 +926,10 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
     print("Checking {:s} annotations...".format(name))
     rename_xml_files(imgdir)
     all_images, annotations = list_files(imgdir)
-    img_basenames = [os.path.splitext(img)[0] for img in dataset]
+    img_basenames = [os.path.splitext(os.path.basename(img))[0] for img in dataset]
 
-    ## supervisely puts the json extension behind the image extension
-    annotation_basenames = [os.path.splitext(os.path.splitext(annot)[0])[0] if os.path.splitext(annot)[0].lower().endswith(supported_cv2_formats) else os.path.splitext(annot)[0] for annot in annotations]
+    # supervisely puts the json extension behind the image extension
+    annotation_basenames = [os.path.splitext(os.path.splitext(os.path.basename(annot))[0])[0] if os.path.splitext(annot)[0].lower().endswith(supported_cv2_formats) else os.path.splitext(os.path.basename(annot))[0] for annot in annotations]
     
     diff_img_annot = []
     for c in range(len(img_basenames)):
@@ -942,7 +942,12 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
     cur_annot_diff = ii32.max
     annot_folder = os.path.join(imgdir, "annotate")
 
-    ## copy the images that lack an annotation to the "annotate" subdirectory so that we can annotate them easily
+    # Check if diff_img_annot is empty before proceeding
+    if not diff_img_annot:
+        logger.error("No images to annotate in the list.")
+        return
+    
+    # copy the images that lack an annotation to the "annotate" subdirectory so that we can annotate them easily
     if len(diff_img_annot) > 0:
         annot_folder_present = os.path.isdir(annot_folder)
         
@@ -957,13 +962,13 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
             image_copy = dataset[search_idx]
             shutil.copyfile(os.path.join(imgdir, image_copy), os.path.join(annot_folder, os.path.basename(image_copy)))
 
-    ## check whether all images have been annotated in the "annotate" subdirectory
+    # check whether all images have been annotated in the "annotate" subdirectory
     if not config['auto_annotate']:
         while len(diff_img_annot) > 0:
             diff_img_annot, cur_annot_diff = highlight_missing_annotations(annot_folder, cur_annot_diff)
-
     else:
         if len(diff_img_annot) > 0:
+            print("len(diff_img_annot):",len(diff_img_annot))
             if config['export_format'] == 'supervisely':
                 out_ann_dir = mkdir_supervisely(annot_folder, config['dataroot'], config['supervisely_meta_json'])
 
@@ -978,7 +983,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
 
                 if config['pretrained_weights'].lower().endswith(".yaml"):
                     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(config['pretrained_weights'])
-                    use_coco = True
+                    # use_coco = True
                 elif config['pretrained_weights'].lower().endswith((".pth", ".pkl")):
                     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(config['classes'])
                     cfg.MODEL.WEIGHTS = config['pretrained_weights']
@@ -1050,7 +1055,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
                 input("Press Enter when all annotations have been checked in folder: {:s}".format(annot_folder))
 
     if os.path.isdir(annot_folder):
-        ## copy the annotations back to the imgdir
+        # copy the annotations back to the imgdir
         rename_xml_files(annot_folder)
         images, annotations = list_files(annot_folder)
         for a in range(len(annotations)):
@@ -1065,7 +1070,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
             else:
                 shutil.copyfile(os.path.join(annot_folder, annotation), os.path.join(imgdir, subdirname[0], annotation))  
 
-        ## remove the annotation-folder again
+        # remove the annotation-folder again
         annot_folder_present = os.path.isdir(annot_folder)
         if annot_folder_present:
             time.sleep(3)
