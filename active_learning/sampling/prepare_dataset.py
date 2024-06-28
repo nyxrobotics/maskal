@@ -962,15 +962,6 @@ def highlight_missing_annotations(annot_folder, cur_annot_diff):
         if img_basename not in annotation_basenames:
             diff_img_annot.append(img_basename)
     diff_img_annot.sort()
-
-    if len(diff_img_annot) > 0:
-        if len(diff_img_annot) != cur_annot_diff:
-            print("Go to the folder {:s}".format(annot_folder))
-            print("and annotate the following images:")
-            for i in range(len(diff_img_annot)):
-                print(diff_img_annot[i])
-            cur_annot_diff = len(diff_img_annot)
-            print("")
     return diff_img_annot, cur_annot_diff
 
 def process_annotation_file(annotation_file, image_file, export_format):
@@ -1044,11 +1035,12 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
 
         for img in unmatched_images:
             shutil.copyfile(os.path.join(imgdir, img), os.path.join(annot_folder, os.path.basename(img)))
+        print(f"Copied {len(unmatched_images)} images to {annot_folder} for annotation.")
 
     # Check whether all images have been annotated in the "annotate" subdirectory
     if not config['auto_annotate']:
         while len(unmatched_images) > 0:
-            unmatched_images = highlight_missing_annotations(annot_folder)
+            unmatched_images = highlight_missing_annotations(annot_folder, cur_annot_diff=0)
     else:
         if len(unmatched_images) > 0:
             if config['export_format'] == 'supervisely':
@@ -1065,7 +1057,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
 
                 if config['pretrained_weights'].lower().endswith(".yaml"):
                     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(config['pretrained_weights'])
-                    use_coco = False
+                    use_coco = True
                 elif config['pretrained_weights'].lower().endswith((".pth", ".pkl")):
                     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(config['classes'])
                     cfg.MODEL.WEIGHTS = config['pretrained_weights']
@@ -1127,9 +1119,9 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
                 except Exception as e:
                     logger.error(f"Error processing image {imgname}: {e}")
 
-            unmatched_images = highlight_missing_annotations(annot_folder)
+            unmatched_images = highlight_missing_annotations(annot_folder, cur_annot_diff=0)
             while len(unmatched_images) > 0:
-                unmatched_images = highlight_missing_annotations(annot_folder)
+                unmatched_images = highlight_missing_annotations(annot_folder, cur_annot_diff=0)
 
             if config['export_format'] == 'cvat':
                 create_zipfile(annot_folder)
