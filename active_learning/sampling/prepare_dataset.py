@@ -1017,39 +1017,40 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
     # supervisely puts the json extension behind the image extension
     annotation_basenames = [os.path.splitext(os.path.splitext(annot)[0])[0] if os.path.splitext(annot)[0].lower().endswith(supported_cv2_formats) else os.path.splitext(annot)[0] for annot in annotations]
 
-    diff_img_annot = []
-    for c in range(len(img_basenames)):
-        img_basename = img_basenames[c]
-        if img_basename not in annotation_basenames:
-            diff_img_annot.append(img_basename)
-    diff_img_annot.sort()
+    # Find matched and unmatched images and annotations
+    matched_images = []
+    matched_annotations = []
+    unmatched_images = []
+    unmatched_annotations = []
 
-    ii32 = np.iinfo(np.int32)
-    cur_annot_diff = ii32.max
+    for img, img_basename in zip(dataset, img_basenames):
+        if img_basename in annotation_basenames:
+            matched_images.append(img)
+            matched_annotations.append(annotations[annotation_basenames.index(img_basename)])
+        else:
+            unmatched_images.append(img)
+
+    for annot, annot_basename in zip(annotations, annotation_basenames):
+        if annot_basename not in img_basenames:
+            unmatched_annotations.append(annot)
+
     annot_folder = os.path.join(imgdir, "annotate")
 
-    # copy the images that lack an annotation to the "annotate" subdirectory so that we can annotate them easily
-    if len(diff_img_annot) > 0:
-        annot_folder_present = os.path.isdir(annot_folder)
-
-        if not annot_folder_present:
-            os.makedirs(annot_folder)
-        else:
+    # Copy the images that lack an annotation to the "annotate" subdirectory so that we can annotate them easily
+    if len(unmatched_images) > 0:
+        if os.path.isdir(annot_folder):
             shutil.rmtree(annot_folder)
-            os.makedirs(annot_folder)
+        os.makedirs(annot_folder)
 
-        for p in range(len(diff_img_annot)):
-            search_idx = img_basenames.index(diff_img_annot[p])
-            image_copy = dataset[search_idx]
-            shutil.copyfile(os.path.join(imgdir, image_copy), os.path.join(annot_folder, os.path.basename(image_copy)))
+        for img in unmatched_images:
+            shutil.copyfile(os.path.join(imgdir, img), os.path.join(annot_folder, os.path.basename(img)))
 
-    # check whether all images have been annotated in the "annotate" subdirectory
+    # Check whether all images have been annotated in the "annotate" subdirectory
     if not config['auto_annotate']:
-        while len(diff_img_annot) > 0:
-            diff_img_annot, cur_annot_diff = highlight_missing_annotations(annot_folder, cur_annot_diff)
-
+        while len(unmatched_images) > 0:
+            unmatched_images = highlight_missing_annotations(annot_folder)
     else:
-        if len(diff_img_annot) > 0:
+        if len(unmatched_images) > 0:
             if config['export_format'] == 'supervisely':
                 out_ann_dir = mkdir_supervisely(annot_folder, config['dataroot'], config['supervisely_meta_json'])
 
@@ -1122,9 +1123,9 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
                     logger.error("unsupported export_format in the maskAL.yaml file")
                     sys.exit("Closing application")
 
-            diff_img_annot, cur_annot_diff = highlight_missing_annotations(annot_folder, cur_annot_diff)
-            while len(diff_img_annot) > 0:
-                diff_img_annot, cur_annot_diff = highlight_missing_annotations(annot_folder, cur_annot_diff)
+            unmatched_images = highlight_missing_annotations(annot_folder)
+            while len(unmatched_images) > 0:
+                unmatched_images = highlight_missing_annotations(annot_folder)
 
             if config['export_format'] == 'cvat':
                 create_zipfile(annot_folder)
@@ -1156,8 +1157,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
             process_annotation_file(os.path.join(imgdir, annotation), image_file, config['export_format'])
 
         # remove the annotation-folder again
-        annot_folder_present = os.path.isdir(annot_folder)
-        if annot_folder_present:
+        if os.path.isdir(annot_folder):
             time.sleep(3)
             shutil.rmtree(annot_folder)
 
