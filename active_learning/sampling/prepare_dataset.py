@@ -1065,7 +1065,7 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
 
                 if config['pretrained_weights'].lower().endswith(".yaml"):
                     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(config['pretrained_weights'])
-                    use_coco = True
+                    use_coco = False
                 elif config['pretrained_weights'].lower().endswith((".pth", ".pkl")):
                     cfg.MODEL.ROI_HEADS.NUM_CLASSES = len(config['classes'])
                     cfg.MODEL.WEIGHTS = config['pretrained_weights']
@@ -1082,46 +1082,50 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
             predictor = DefaultPredictor(cfg)
 
             for i in tqdm(range(len(images))):
-                # Load the RGB image
-                imgname = images[i]
-                basename = os.path.basename(imgname)
-                img = cv2.imread(os.path.join(annot_folder, imgname))
-                height, width, _ = img.shape
+                try:
+                    # Load the RGB image
+                    imgname = images[i]
+                    basename = os.path.basename(imgname)
+                    print(f"Processing image: {imgname}")
+                    img = cv2.imread(os.path.join(annot_folder, imgname))
+                    height, width, _ = img.shape
 
-                # Do the image inference and extract the outputs from Mask R-CNN
-                outputs = predictor(img)
-                instances = outputs["instances"].to("cpu")
-                classes = instances.pred_classes.numpy()
-                scores = instances.scores.numpy()
-                boxes = instances.pred_boxes.tensor.numpy()
-                masks = instances.pred_masks.numpy()
+                    # Do the image inference and extract the outputs from Mask R-CNN
+                    outputs = predictor(img)
+                    instances = outputs["instances"].to("cpu")
+                    classes = instances.pred_classes.numpy()
+                    scores = instances.scores.numpy()
+                    boxes = instances.pred_boxes.tensor.numpy()
+                    masks = instances.pred_masks.numpy()
 
-                if use_coco:
-                    v = Visualizer(img[:, :, ::-1], MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), scale=1.2)
-                    class_labels = v.metadata.get("thing_classes", None)
-                else:
-                    class_labels = config['classes']
+                    if use_coco:
+                        v = Visualizer(img[:, :, ::-1], MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), scale=1.2)
+                        class_labels = v.metadata.get("thing_classes", None)
+                    else:
+                        class_labels = config['classes']
 
-                class_names = []
-                for h in range(len(classes)):
-                    class_id = classes[h]
-                    class_name = class_labels[class_id]
-                    class_names.append(class_name)
+                    class_names = []
+                    for h in range(len(classes)):
+                        class_id = classes[h]
+                        class_name = class_labels[class_id]
+                        class_names.append(class_name)
 
-                img_vis = visualize_mrcnn(img, classes, scores, masks, boxes, class_labels)
+                    img_vis = visualize_mrcnn(img, classes, scores, masks, boxes, class_labels)
 
-                if config['export_format'] == 'labelme':
-                    write_labelme_annotations(annot_folder, basename, class_names, masks, height, width)
-                elif config['export_format'] == 'cvat':
-                    write_cvat_annotations(annot_folder, basename, class_names, masks, height, width)
-                elif config['export_format'] == 'supervisely':
-                    write_supervisely_annotations(out_ann_dir, basename, class_names, masks, height, width, config['supervisely_meta_json'])
-                    write_supervisely_annotations(annot_folder, basename, class_names, masks, height, width, config['supervisely_meta_json'])
-                elif config['export_format'] == "darwin":
-                    write_darwin_annotations(annot_folder, basename, class_names, masks, height, width)
-                else:
-                    logger.error("unsupported export_format in the maskAL.yaml file")
-                    sys.exit("Closing application")
+                    if config['export_format'] == 'labelme':
+                        write_labelme_annotations(annot_folder, basename, class_names, masks, height, width)
+                    elif config['export_format'] == 'cvat':
+                        write_cvat_annotations(annot_folder, basename, class_names, masks, height, width)
+                    elif config['export_format'] == 'supervisely':
+                        write_supervisely_annotations(out_ann_dir, basename, class_names, masks, height, width, config['supervisely_meta_json'])
+                        write_supervisely_annotations(annot_folder, basename, class_names, masks, height, width, config['supervisely_meta_json'])
+                    elif config['export_format'] == "darwin":
+                        write_darwin_annotations(annot_folder, basename, class_names, masks, height, width)
+                    else:
+                        logger.error("unsupported export_format in the maskAL.yaml file")
+                        sys.exit("Closing application")
+                except Exception as e:
+                    logger.error(f"Error processing image {imgname}: {e}")
 
             unmatched_images = highlight_missing_annotations(annot_folder)
             while len(unmatched_images) > 0:
@@ -1141,25 +1145,30 @@ def check_json_presence(config, imgdir, dataset, name, cfg=[]):
         rename_xml_files(annot_folder)
         images, annotations = list_files(annot_folder)
         for a in range(len(annotations)):
-            annotation = annotations[a]
-            if config['export_format'] == 'supervisely':
-                subdirname = [os.path.dirname(imgb) for imgb in img_basenames if os.path.splitext(os.path.splitext(annotation)[0])[0] in imgb]
-            else:
-                subdirname = [os.path.dirname(imgb) for imgb in img_basenames if os.path.splitext(annotation)[0] in imgb]
+            try:
+                annotation = annotations[a]
+                if config['export_format'] == 'supervisely':
+                    subdirname = [os.path.dirname(imgb) for imgb in img_basenames if os.path.splitext(os.path.splitext(annotation)[0])[0] in imgb]
+                else:
+                    subdirname = [os.path.dirname(imgb) for imgb in img_basenames if os.path.splitext(annotation)[0] in imgb]
 
-            if subdirname == [''] or subdirname == []:
-                shutil.copyfile(os.path.join(annot_folder, annotation), os.path.join(imgdir, annotation))
-            else:
-                shutil.copyfile(os.path.join(annot_folder, annotation), os.path.join(imgdir, subdirname[0], annotation))
+                if subdirname == [''] or subdirname == []:
+                    shutil.copyfile(os.path.join(annot_folder, annotation), os.path.join(imgdir, annotation))
+                else:
+                    shutil.copyfile(os.path.join(annot_folder, annotation), os.path.join(imgdir, subdirname[0], annotation))
 
-            # Process the annotation file to ensure it meets the specified requirements
-            image_file = os.path.join(imgdir, os.path.basename(annotation).replace('.json', ''))
-            process_annotation_file(os.path.join(imgdir, annotation), image_file, config['export_format'])
+                # Process the annotation file to ensure it meets the specified requirements
+                image_file = os.path.join(imgdir, os.path.basename(annotation).replace('.json', ''))
+                process_annotation_file(os.path.join(imgdir, annotation), image_file, config['export_format'])
+            except Exception as e:
+                logger.error(f"Error copying annotation {annotation}: {e}")
 
         # remove the annotation-folder again
         if os.path.isdir(annot_folder):
             time.sleep(3)
             shutil.rmtree(annot_folder)
+
+
 
 def smooth_contours(contours):
     ## thanks to: https://agniva.me/scipy/2016/10/25/contour-smoothing.html
