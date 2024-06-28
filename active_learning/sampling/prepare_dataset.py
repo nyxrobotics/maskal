@@ -193,7 +193,7 @@ def rename_xml_files(annotdir):
                         os.rename(os.path.join(annotdir, annotation), os.path.join(annotdir, xml_name))
 
 
-def process_labelme_json(jsonfile, classnames):
+def process_labelme_json(jsonfile, classnames, width, height):
     group_ids = []
 
     with open(jsonfile, 'r') as json_file:
@@ -297,6 +297,15 @@ def process_labelme_json(jsonfile, classnames):
                 pts = np.asarray(points).astype(np.float32).reshape(-1,1,2)   
                 points = np.asarray(pts).flatten().tolist()
 
+                # Ensure polygon points are within image boundaries
+                for i in range(0, len(points), 2):
+                    if points[i] < 0 or points[i] >= width:
+                        logger.warning(f"X-coordinate {points[i]} is out of bounds. Clamping to image boundary.")
+                        points[i] = max(0, min(points[i], width - 1))
+                    if points[i+1] < 0 or points[i+1] >= height:
+                        logger.warning(f"Y-coordinate {points[i+1]} is out of bounds. Clamping to image boundary.")
+                        points[i+1] = max(0, min(points[i+1], height - 1))
+
             masks[fill_id].append(points)
 
             ## labelme version 4.5.6 does not have a crowd_id, so fill it with zeros
@@ -307,9 +316,7 @@ def process_labelme_json(jsonfile, classnames):
 
     return category_ids, masks, crowd_ids, status
 
-
-def process_darwin_json(jsonfile, classnames):
-    
+def process_darwin_json(jsonfile, classnames, width, height):
     with open(jsonfile, 'r') as json_file:
         data = json.load(json_file)
 
@@ -345,6 +352,15 @@ def process_darwin_json(jsonfile, classnames):
                         points.append(path_points[h]['x'])
                         points.append(path_points[h]['y'])
 
+                    # Ensure polygon points are within image boundaries
+                    for i in range(0, len(points), 2):
+                        if points[i] < 0 or points[i] >= width:
+                            logger.warning(f"X-coordinate {points[i]} is out of bounds. Clamping to image boundary.")
+                            points[i] = max(0, min(points[i], width - 1))
+                        if points[i+1] < 0 or points[i+1] >= height:
+                            logger.warning(f"Y-coordinate {points[i+1]} is out of bounds. Clamping to image boundary.")
+                            points[i+1] = max(0, min(points[i+1], height - 1))
+
                     masks[fill_id].append(points)
 
             if 'complex_polygon' in p:
@@ -355,6 +371,15 @@ def process_darwin_json(jsonfile, classnames):
                         for h in range(len(path_points)):
                             points.append(path_points[h]['x'])
                             points.append(path_points[h]['y'])
+
+                        # Ensure polygon points are within image boundaries
+                        for i in range(0, len(points), 2):
+                            if points[i] < 0 or points[i] >= width:
+                                logger.warning(f"X-coordinate {points[i]} is out of bounds. Clamping to image boundary.")
+                                points[i] = max(0, min(points[i], width - 1))
+                            if points[i+1] < 0 or points[i+1] >= height:
+                                logger.warning(f"Y-coordinate {points[i+1]} is out of bounds. Clamping to image boundary.")
+                                points[i+1] = max(0, min(points[i+1], height - 1))
 
                         masks[fill_id].append(points)
                     
@@ -367,8 +392,7 @@ def process_darwin_json(jsonfile, classnames):
 
     return category_ids, masks, crowd_ids, status
 
-
-def process_cvat_xml(xmlfile, classnames):
+def process_cvat_xml(xmlfile, classnames, width, height):
     group_ids = []
 
     with open(xmlfile) as xml_file:
@@ -432,6 +456,15 @@ def process_cvat_xml(xmlfile, classnames):
                             points.append(float(path_points[h]['x']))
                             points.append(float(path_points[h]['y']))
 
+                        # Ensure polygon points are within image boundaries
+                        for i in range(0, len(points), 2):
+                            if points[i] < 0 or points[i] >= width:
+                                logger.warning(f"X-coordinate {points[i]} is out of bounds. Clamping to image boundary.")
+                                points[i] = max(0, min(points[i], width - 1))
+                            if points[i+1] < 0 or points[i+1] >= height:
+                                logger.warning(f"Y-coordinate {points[i+1]} is out of bounds. Clamping to image boundary.")
+                                points[i+1] = max(0, min(points[i+1], height - 1))
+
                         masks[fill_id].append(points)
 
                 crowd_ids[fill_id] = 0
@@ -461,6 +494,15 @@ def process_cvat_xml(xmlfile, classnames):
                     for h in range(len(path_points)):
                         points.append(float(path_points[h]['x']))
                         points.append(float(path_points[h]['y']))
+
+                    # Ensure polygon points are within image boundaries
+                    for i in range(0, len(points), 2):
+                        if points[i] < 0 or points[i] >= width:
+                            logger.warning(f"X-coordinate {points[i]} is out of bounds. Clamping to image boundary.")
+                            points[i] = max(0, min(points[i], width - 1))
+                        if points[i+1] < 0 or points[i+1] >= height:
+                            logger.warning(f"Y-coordinate {points[i+1]} is out of bounds. Clamping to image boundary.")
+                            points[i+1] = max(0, min(points[i+1], height - 1))
 
                     masks[fill_id].append(points)
 
@@ -501,7 +543,7 @@ def mkdir_supervisely(img_dir, write_dir, supervisely_meta_json):
     return out_ann_dir  
 
 
-def process_supervisely_json(jsonfile, classnames):
+def process_supervisely_json(jsonfile, classnames, width, height):
     with open(jsonfile, 'r') as json_file:
         data = json.load(json_file)
 
@@ -570,6 +612,15 @@ def process_supervisely_json(jsonfile, classnames):
                 for h in range(len(exterior_points)):
                     points.append(exterior_points[h][0])
                     points.append(exterior_points[h][1])
+
+                    # Ensure polygon points are within image boundaries
+                    if points[-2] < 0 or points[-2] >= width:
+                        logger.warning(f"X-coordinate {points[-2]} is out of bounds. Clamping to image boundary.")
+                        points[-2] = max(0, min(points[-2], width - 1))
+                    if points[-1] < 0 or points[-1] >= height:
+                        logger.warning(f"Y-coordinate {points[-1]} is out of bounds. Clamping to image boundary.")
+                        points[-1] = max(0, min(points[-1], height - 1))
+
                 masks[fill_id].append(points)
 
             crowd_ids[fill_id] = 0
@@ -860,16 +911,16 @@ def create_json(rootdir, imgdir, images, classes, name):
 
             # Procedure to store the annotations in the final JSON file
             if annot_format == 'labelme':
-                category_ids, masks, crowd_ids, status = process_labelme_json(annot_filename, classes)
+                category_ids, masks, crowd_ids, status = process_labelme_json(annot_filename, classes, width, height)
             
             if annot_format == 'darwin':
-                category_ids, masks, crowd_ids, status = process_darwin_json(annot_filename, classes)
+                category_ids, masks, crowd_ids, status = process_darwin_json(annot_filename, classes, width, height)
 
             if annot_format == 'cvat':
-                category_ids, masks, crowd_ids, status = process_cvat_xml(annot_filename, classes)
+                category_ids, masks, crowd_ids, status = process_cvat_xml(annot_filename, classes, width, height)
 
             if annot_format == 'supervisely':
-                category_ids, masks, crowd_ids, status = process_supervisely_json(annot_filename, classes)
+                category_ids, masks, crowd_ids, status = process_supervisely_json(annot_filename, classes, width, height)
 
             areas, boxes = bounding_box(masks)
             img_vis = visualize_annotations(img, category_ids, masks, boxes, classes)
